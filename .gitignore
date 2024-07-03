@@ -1,0 +1,6 @@
+.vscode
+*.csv
+.DS_Store
+sleep_statistics.svg
+sleep_statistics.png
+sleep-stats
