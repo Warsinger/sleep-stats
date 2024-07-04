@@ -8,10 +8,12 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"golang.org/x/exp/maps"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -209,6 +211,18 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 	}
 }
 
+func outputStats(nightlyStats map[string]map[string]time.Duration) {
+	fmt.Println("Sleep Statistics by Date:")
+
+	dates := maps.Keys(nightlyStats)
+	slices.Sort(dates)
+
+	for _, date := range dates {
+		stats := nightlyStats[date]
+		fmt.Printf("%s\tBed: %v\tCore: %v\tREM: %v\tDeep: %v\tAwake: %v\n", date, stats["inBed"], stats["asleepCore"], stats["asleepREM"], stats["asleepDeep"], stats["awake"])
+	}
+}
+
 func main() {
 	filename := flag.String("file", "", "CSV file containing sleep data")
 	start := flag.String("start", "", "Start date (inclusive) in YYYY-MM-DD format")
@@ -249,13 +263,5 @@ func main() {
 
 	createPlot(nightlyStats, *useLines)
 
-	fmt.Println("Sleep Statistics by Date:")
-	for date, stats := range nightlyStats {
-		fmt.Printf("Date: %s\n", date)
-		fmt.Printf("  Total In Bed: %v\n", stats["inBed"])
-		fmt.Printf("  Total Asleep Core: %v\n", stats["asleepCore"])
-		fmt.Printf("  Total Asleep REM: %v\n", stats["asleepREM"])
-		fmt.Printf("  Total Asleep Deep: %v\n", stats["asleepDeep"])
-		fmt.Printf("  Total Awake: %v\n", stats["awake"])
-	}
+	outputStats(nightlyStats)
 }

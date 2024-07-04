@@ -2,7 +2,10 @@ module sleep-stats
 
 go 1.22.4
 
-require gonum.org/v1/plot v0.14.0
+require (
+	golang.org/x/exp v0.0.0-20230801115018-d63ba01acd4b
+	gonum.org/v1/plot v0.14.0
+)
 
 require (
 	git.sr.ht/~sbinet/gg v0.5.0 // indirect
