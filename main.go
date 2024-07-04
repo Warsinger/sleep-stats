@@ -191,7 +191,7 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 				panic(err)
 			}
 			scatter.GlyphStyle.Color = color
-			scatter.GlyphStyle.Radius = vg.Points(2)
+			scatter.GlyphStyle.Radius = vg.Points(3)
 			item, thumb = scatter, scatter
 		}
 		p.Legend.Add(label, thumb)
@@ -199,9 +199,9 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 	}
 
 	p.Add(createItem(inBedDurations, "In Bed", color.RGBA{R: 255, G: 0, B: 0, A: 255}))
-	p.Add(createItem(asleepCoreDurations, "Asleep Core", color.RGBA{R: 0, G: 255, B: 0, A: 255}))
-	p.Add(createItem(asleepREMDurations, "Asleep REM", color.RGBA{R: 0, G: 0, B: 255, A: 255}))
-	p.Add(createItem(asleepDeepDurations, "Asleep Deep", color.RGBA{R: 255, G: 255, B: 0, A: 255}))
+	p.Add(createItem(asleepCoreDurations, "Core", color.RGBA{R: 0, G: 255, B: 0, A: 255}))
+	p.Add(createItem(asleepREMDurations, "REM", color.RGBA{R: 255, G: 0, B: 255, A: 255}))
+	p.Add(createItem(asleepDeepDurations, "Deep", color.RGBA{R: 0, G: 122, B: 122, A: 255}))
 	p.Add(createItem(awakeDurations, "Awake", color.RGBA{R: 128, G: 128, B: 128, A: 255}))
 
 	p.X.Tick.Marker = plot.TimeTicks{Format: "2006-01"}
