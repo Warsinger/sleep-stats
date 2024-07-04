@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"image/color"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -15,70 +18,98 @@ import (
 )
 
 type SleepData struct {
-	SourceName    string
-	SourceVersion string
-	ProductType   string
-	Device        string
-	StartDate     time.Time
-	EndDate       time.Time
-	Value         string
-	TimeZone      string
+	StartDate time.Time
+	EndDate   time.Time
+	Value     string
 }
 
-func parseCSV(filename string) ([]SleepData, error) {
+func parseCSV(filename string, startFilter, endFilter *time.Time) ([]SleepData, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
+	reader := bufio.NewReader(file)
 
-	// Skip the first row (header)
-	if _, err := reader.Read(); err != nil {
+	// check for the "sep=" starting line and if it exists read past it before parsing CSV
+	// TODO go ahead and read the separator character and use it for the CSV delim
+	head, err := reader.Peek(4)
+	if err != nil {
 		return nil, err
+
+	}
+	if string(head) == "sep=" {
+		_, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	records, err := reader.ReadAll()
+	csvReader := csv.NewReader(reader)
+
+	// read and parse the first row
+	header, err := csvReader.Read()
 	if err != nil {
 		return nil, err
 	}
+	headerMap := parseHeader(header)
 
 	var sleepData []SleepData
-	for _, record := range records {
-		if !strings.HasPrefix(record[3], "Watch") {
-			continue // Skip non-watch entries
+	for {
+		record, err := csvReader.Read()
+		if err == io.EOF {
+			break
 		}
-		startDate, err := time.Parse("2006-01-02 15:04:05 -0700", record[5])
 		if err != nil {
 			return nil, err
 		}
-		endDate, err := time.Parse("2006-01-02 15:04:05 -0700", record[6])
+
+		// Skip non-watch entries
+		isWatch := strings.HasPrefix(record[headerMap["productType"]], "Watch")
+		if !isWatch {
+			continue
+		}
+
+		startDate, err := time.Parse("2006-01-02 15:04:05 +0000", record[headerMap["startDate"]])
 		if err != nil {
 			return nil, err
 		}
-		sleepData = append(sleepData, SleepData{
-			SourceName:    record[1],
-			SourceVersion: record[2],
-			ProductType:   record[3],
-			Device:        record[4],
-			StartDate:     startDate,
-			EndDate:       endDate,
-			Value:         record[7],
-			TimeZone:      record[8],
-		})
+		endDate, err := time.Parse("2006-01-02 15:04:05 +0000", record[headerMap["endDate"]])
+		if err != nil {
+			return nil, err
+		}
+		if (startFilter == nil || startDate.After(*startFilter) || startDate.Equal(*startFilter)) &&
+			(endFilter == nil || endDate.Before(*endFilter) || endDate.Equal(*endFilter)) {
+			sleepData = append(sleepData, SleepData{
+				StartDate: startDate,
+				EndDate:   endDate,
+				Value:     record[headerMap["value"]],
+			})
+		}
 	}
 	return sleepData, nil
+}
+
+// parse the header names and return a map of the names to the index
+func parseHeader(header []string) map[string]int {
+	headerMap := make(map[string]int, (len(header)))
+	for i, name := range header {
+		headerMap[name] = i
+	}
+	fmt.Println(headerMap)
+	return headerMap
 }
 
 func groupByDate(data []SleepData) map[string][]SleepData {
 	groupedData := make(map[string][]SleepData)
 	for _, entry := range data {
 		dateKey := entry.StartDate
-		if entry.StartDate.Hour() < 12 {
-			// Group with the previous day if the start time is before noon
-			dateKey = dateKey.AddDate(0, 0, -1)
-		}
+		// don't need to account for date spanning since the data is in UTC
+		// if entry.StartDate.Hour() < 12 {
+		// 	// Group with the previous day if the start time is before noon
+		// 	dateKey = dateKey.AddDate(0, 0, -1)
+		// }
 		dateKeyStr := dateKey.Format("2006-01-02")
 		groupedData[dateKeyStr] = append(groupedData[dateKeyStr], entry)
 	}
@@ -164,12 +195,34 @@ func createPlot(nightlyStats map[string]map[string]time.Duration) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
+	filename := flag.String("file", "", "CSV file containing sleep data")
+	start := flag.String("start", "", "Start date (inclusive) in YYYY-MM-DD format")
+	end := flag.String("end", "", "End date (inclusive) in YYYY-MM-DD format")
+	flag.Parse()
+
+	if *filename == "" {
 		fmt.Println("Please provide the CSV file as an argument.")
 		os.Exit(1)
 	}
-	filename := os.Args[1]
-	sleepData, err := parseCSV(filename)
+
+	var startDate, endDate *time.Time
+	if *start != "" {
+		parsedStart, err := time.Parse("2006-01-02", *start)
+		if err != nil {
+			fmt.Printf("Invalid start date format: %v\n", err)
+			os.Exit(1)
+		}
+		startDate = &parsedStart
+	}
+	if *end != "" {
+		parsedEnd, err := time.Parse("2006-01-02", *end)
+		if err != nil {
+			fmt.Printf("Invalid end date format: %v\n", err)
+			os.Exit(1)
+		}
+		endDate = &parsedEnd
+	}
+	sleepData, err := parseCSV(*filename, startDate, endDate)
 	if err != nil {
 		fmt.Printf("Error reading CSV file: %v\n", err)
 		os.Exit(1)
