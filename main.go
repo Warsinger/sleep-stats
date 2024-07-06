@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/exp/maps"
+	"gonum.org/v1/gonum/stat"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
@@ -183,12 +184,12 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, awakeCount map
 		awakeCountPlot = append(awakeCountPlot, float64(awakeCount[dateKey]))
 	}
 
-	createItem := func(durations []float64, label string, color color.RGBA) plot.Plotter {
+	createItem := func(durations []float64, label string, color color.RGBA) []plot.Plotter {
 		points := make(plotter.XYs, len(dates))
 		for i, duration := range durations {
 			points[i].X = datePoints[i].X
 			if duration == 0 {
-				points[i].Y = 0.2
+				points[i].Y = 0.01
 			} else {
 				points[i].Y = duration
 			}
@@ -216,21 +217,56 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, awakeCount map
 			item, thumb = scatter, scatter
 		}
 		p.Legend.Add(label, thumb)
-		return item
+
+		return []plot.Plotter{item, linearRegression(points, color)}
 	}
 
-	p.Add(createItem(inBedDurations, "In Bed", color.RGBA{R: 255, G: 0, B: 0, A: 255}))
-	p.Add(createItem(asleepCoreDurations, "Core", color.RGBA{R: 0, G: 255, B: 0, A: 255}))
-	p.Add(createItem(asleepREMDurations, "REM", color.RGBA{R: 255, G: 0, B: 255, A: 255}))
-	p.Add(createItem(asleepDeepDurations, "Deep", color.RGBA{R: 0, G: 122, B: 122, A: 255}))
-	p.Add(createItem(awakeDurations, "Awake", color.RGBA{R: 128, G: 128, B: 128, A: 255}))
-	p.Add(createItem(awakeCountPlot, "Awake Count", color.RGBA{R: 255, G: 155, B: 156, A: 255}))
+	// p.Add(createItem(inBedDurations, "In Bed", color.RGBA{R: 255, G: 0, B: 0, A: 255})...)
+	p.Add(createItem(asleepCoreDurations, "Core", color.RGBA{R: 0, G: 255, B: 0, A: 255})...)
+	p.Add(createItem(asleepREMDurations, "REM", color.RGBA{R: 255, G: 0, B: 255, A: 255})...)
+	p.Add(createItem(asleepDeepDurations, "Deep", color.RGBA{R: 0, G: 122, B: 122, A: 255})...)
+	p.Add(createItem(awakeDurations, "Awake", color.RGBA{R: 128, G: 128, B: 128, A: 255})...)
+	// p.Add(createItem(awakeCountPlot, "Awake Count", color.RGBA{R: 255, G: 155, B: 156, A: 255})...)
 
 	p.X.Tick.Marker = plot.TimeTicks{Format: "2006-01"}
 
 	if err := p.Save(15*vg.Inch, 8*vg.Inch, "sleep_statistics.svg"); err != nil {
 		panic(err)
 	}
+}
+
+func linearRegression(points plotter.XYs, color color.RGBA) plot.Plotter {
+	var (
+		xs      = make([]float64, len(points))
+		ys      = make([]float64, len(points))
+		weights []float64
+	)
+
+	for i := range xs {
+		xs[i] = points[i].X
+		ys[i] = points[i].Y
+	}
+
+	// y = alpha + beta*x
+	alpha, beta := stat.LinearRegression(xs, ys, weights, false)
+
+	rPoints := make(plotter.XYs, len(xs))
+	lineFunc := func(x float64) float64 {
+		return alpha + beta*x
+	}
+
+	for i := range xs {
+		rPoints[i].X = xs[i]
+		rPoints[i].Y = lineFunc(xs[i])
+	}
+
+	rline, err := plotter.NewLine(rPoints)
+	if err != nil {
+		panic(err)
+	}
+	rline.LineStyle.Color = color
+	rline.LineStyle.Width = vg.Points(2)
+	return rline
 }
 
 func outputStats(nightlyStats map[string]map[string]time.Duration, awakeCount map[string]int) {

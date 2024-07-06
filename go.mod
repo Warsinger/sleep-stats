@@ -4,6 +4,7 @@ go 1.22.5
 
 require (
 	golang.org/x/exp v0.0.0-20230801115018-d63ba01acd4b
+	gonum.org/v1/gonum v0.14.0
 	gonum.org/v1/plot v0.14.0
 )
 
