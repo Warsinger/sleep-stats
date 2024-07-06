@@ -17,6 +17,7 @@ import (
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
+	"gonum.org/v1/plot/vg/draw"
 )
 
 type SleepData struct {
@@ -118,25 +119,32 @@ func groupByDate(data []SleepData) map[string][]SleepData {
 	return groupedData
 }
 
-func calculateNightlyStatistics(data map[string][]SleepData) map[string]map[string]time.Duration {
+func calculateNightlyStatistics(data map[string][]SleepData) (map[string]map[string]time.Duration, map[string]int) {
 	nightlyStats := make(map[string]map[string]time.Duration)
+	awakeCount := make(map[string]int)
 	for date, entries := range data {
 		stats := make(map[string]time.Duration)
+		var count int = 0
 		for _, entry := range entries {
 			duration := entry.EndDate.Sub(entry.StartDate)
 			stats[entry.Value] += duration
+			if entry.Value == "inBed" {
+				count++
+			}
 		}
 		nightlyStats[date] = stats
+		awakeCount[date] = count
 	}
-	return nightlyStats
+	return nightlyStats, awakeCount
 }
 
-func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool) {
+func createPlot(nightlyStats map[string]map[string]time.Duration, awakeCount map[string]int, useLines bool) {
 	p := plot.New()
 
 	p.Title.Text = "Sleep Statistics Over Time"
 	p.X.Label.Text = "Date"
-	p.Y.Label.Text = "Duration (min)"
+	p.Y.Label.Text = "Duration (hours)"
+	p.Y.Scale = plot.LogScale{}
 	p.Legend.Top = true
 
 	// Prepare data for plotting
@@ -147,31 +155,43 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 	asleepREMDurations := make([]float64, 0, numTicks)
 	asleepDeepDurations := make([]float64, 0, numTicks)
 	awakeDurations := make([]float64, 0, numTicks)
+	awakeCountPlot := make([]float64, 0, numTicks)
+	datePoints := make(plotter.XYs, numTicks)
 
 	layout := "2006-01-02"
-	for date, stats := range nightlyStats {
+	for date := range nightlyStats {
 		dateParsed, _ := time.Parse(layout, date)
 		dates = append(dates, dateParsed)
-		inBedDurations = append(inBedDurations, stats["inBed"].Minutes())
-		asleepCoreDurations = append(asleepCoreDurations, stats["asleepCore"].Minutes())
-		asleepREMDurations = append(asleepREMDurations, stats["asleepREM"].Minutes())
-		asleepDeepDurations = append(asleepDeepDurations, stats["asleepDeep"].Minutes())
-		awakeDurations = append(awakeDurations, stats["awake"].Minutes())
 	}
 
 	// Sort dates for plotting
 	sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
 
-	datePoints := make(plotter.XYs, len(dates))
 	for i, date := range dates {
+		// fmt.Printf("%d, %s", i, date)
 		datePoints[i].X = float64(date.Unix())
+	}
+
+	for _, date := range dates {
+		dateKey := date.Format(layout)
+		stats := nightlyStats[dateKey]
+		inBedDurations = append(inBedDurations, stats["inBed"].Hours())
+		asleepCoreDurations = append(asleepCoreDurations, stats["asleepCore"].Hours())
+		asleepREMDurations = append(asleepREMDurations, stats["asleepREM"].Hours())
+		asleepDeepDurations = append(asleepDeepDurations, stats["asleepDeep"].Hours())
+		awakeDurations = append(awakeDurations, stats["awake"].Hours())
+		awakeCountPlot = append(awakeCountPlot, float64(awakeCount[dateKey]))
 	}
 
 	createItem := func(durations []float64, label string, color color.RGBA) plot.Plotter {
 		points := make(plotter.XYs, len(dates))
 		for i, duration := range durations {
 			points[i].X = datePoints[i].X
-			points[i].Y = duration
+			if duration == 0 {
+				points[i].Y = 0.2
+			} else {
+				points[i].Y = duration
+			}
 		}
 		var item plot.Plotter
 		var thumb plot.Thumbnailer
@@ -192,6 +212,7 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 			}
 			scatter.GlyphStyle.Color = color
 			scatter.GlyphStyle.Radius = vg.Points(3)
+			scatter.GlyphStyle.Shape = draw.CircleGlyph{}
 			item, thumb = scatter, scatter
 		}
 		p.Legend.Add(label, thumb)
@@ -203,6 +224,7 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 	p.Add(createItem(asleepREMDurations, "REM", color.RGBA{R: 255, G: 0, B: 255, A: 255}))
 	p.Add(createItem(asleepDeepDurations, "Deep", color.RGBA{R: 0, G: 122, B: 122, A: 255}))
 	p.Add(createItem(awakeDurations, "Awake", color.RGBA{R: 128, G: 128, B: 128, A: 255}))
+	p.Add(createItem(awakeCountPlot, "Awake Count", color.RGBA{R: 255, G: 155, B: 156, A: 255}))
 
 	p.X.Tick.Marker = plot.TimeTicks{Format: "2006-01"}
 
@@ -211,7 +233,7 @@ func createPlot(nightlyStats map[string]map[string]time.Duration, useLines bool)
 	}
 }
 
-func outputStats(nightlyStats map[string]map[string]time.Duration) {
+func outputStats(nightlyStats map[string]map[string]time.Duration, awakeCount map[string]int) {
 	fmt.Println("Sleep Statistics by Date:")
 
 	dates := maps.Keys(nightlyStats)
@@ -219,7 +241,8 @@ func outputStats(nightlyStats map[string]map[string]time.Duration) {
 
 	for _, date := range dates {
 		stats := nightlyStats[date]
-		fmt.Printf("%s\tBed: %v\tCore: %v\tREM: %v\tDeep: %v\tAwake: %v\n", date, stats["inBed"], stats["asleepCore"], stats["asleepREM"], stats["asleepDeep"], stats["awake"])
+		fmt.Printf("%s\tBed: %v\tCore: %v\tREM: %v\tDeep: %v\tAwake: %v\tAwake Count: %v\n",
+			date, stats["inBed"], stats["asleepCore"], stats["asleepREM"], stats["asleepDeep"], stats["awake"], awakeCount[date])
 	}
 }
 
@@ -259,9 +282,9 @@ func main() {
 	}
 
 	groupedData := groupByDate(sleepData)
-	nightlyStats := calculateNightlyStatistics(groupedData)
+	nightlyStats, awakeCount := calculateNightlyStatistics(groupedData)
 
-	createPlot(nightlyStats, *useLines)
+	createPlot(nightlyStats, awakeCount, *useLines)
 
-	outputStats(nightlyStats)
+	outputStats(nightlyStats, awakeCount)
 }
